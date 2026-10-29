@@ -11,7 +11,29 @@ permissions:
   contents: write
 
 jobs:
+  # Make sure there is ONE draft release for this version before the Mac and Windows builds start,
+  # so both upload into the same release (no race, no "release already published" skips).
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Create or reopen the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=true
+          else
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "Corkly ${TAG#v}" --notes-file build/release-notes.md
+          fi
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +58,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_GH_IGNORE_TIME: 'true'
           # Optional secrets — leave them unset until you have certificates.
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
@@ -68,3 +91,13 @@ jobs:
             fi
           fi
           npx electron-builder ${{ matrix.platform }} --publish always $EXTRA
+
+  # Once both installers are uploaded, make the release public.
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.prepare.outputs.tag }}" -R "$GITHUB_REPOSITORY" --draft=false --latest
