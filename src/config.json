@@ -1,0 +1,11 @@
+{
+  "tipUrl": "https://ko-fi.com/adetoba",
+  "tipButtonLabel": "Buy me a coffee",
+  "nudge": {
+    "afterLaunches": 5,
+    "afterDays": 3,
+    "remindEveryDays": 30
+  },
+  "releasesUrl": "https://github.com/adtoba/corkly/releases/latest",
+  "macSigned": false
+}

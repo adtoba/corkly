@@ -1,0 +1,112 @@
+{
+  "name": "corkly",
+  "productName": "Corkly",
+  "version": "1.0.0",
+  "description": "A playful pinboard for your desktop — pin notes, photos, checklists and links, and tie them together with yarn.",
+  "author": "Adebisi Habib Adetoba",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "release": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/patrick-hand": "^5.3.0",
+    "@fontsource/permanent-marker": "^5.3.0",
+    "@fontsource/special-elite": "^5.3.0",
+    "electron-updater": "^6.8.11"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.adetoba.corkly",
+    "productName": "Corkly",
+    "copyright": "Copyright © 2026 Adebisi Habib Adetoba",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "artifactName": "Corkly-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "adtoba",
+        "repo": "corkly",
+        "releaseType": "release"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "title": "Corkly ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Corkly",
+      "runAfterFinish": true,
+      "artifactName": "Corkly-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png"
+    },
+    "releaseInfo": {
+      "releaseNotesFile": "build/release-notes.md"
+    }
+  },
+  "homepage": "https://github.com/adtoba/corkly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adtoba/corkly.git"
+  }
+}
