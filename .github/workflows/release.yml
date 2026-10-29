@@ -33,19 +33,38 @@ jobs:
       - run: npm ci
 
       - name: Build and publish
-        run: npx electron-builder ${{ matrix.platform }} --publish always
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # --- macOS signing & notarization (optional until you have an Apple Developer account) ---
-          # Add these repo secrets later and the Mac app will be signed + notarized automatically.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
-          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-          # --- Windows signing (optional) ---
-          WIN_CSC_LINK: ${{ secrets.WIN_CERT_P12_BASE64 }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+          # Optional secrets — leave them unset until you have certificates.
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CERT_P12_BASE64: ${{ secrets.WIN_CERT_P12_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+        run: |
+          EXTRA=""
+          # Only hand signing settings to electron-builder when they actually exist —
+          # an empty CSC_LINK makes it try to read the project folder as a certificate.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            if [ -n "$MAC_CERT_P12_BASE64" ]; then
+              export CSC_LINK="$MAC_CERT_P12_BASE64" CSC_KEY_PASSWORD="$MAC_CERT_PASSWORD"
+            else
+              echo "No Mac certificate yet - ad-hoc signing (users click 'Open Anyway' once)"
+              # "-" = ad-hoc signature, which Apple Silicon needs for the app to launch at all.
+              # Hardened runtime is for notarized builds only; with ad-hoc signing it blocks Electron from loading.
+              EXTRA="-c.mac.identity=- -c.mac.hardenedRuntime=false"
+            fi
+            if [ -n "$APPLE_ID_SECRET" ]; then
+              export APPLE_ID="$APPLE_ID_SECRET" APPLE_APP_SPECIFIC_PASSWORD="$APPLE_PASSWORD_SECRET" APPLE_TEAM_ID="$APPLE_TEAM_SECRET"
+            fi
+          else
+            if [ -n "$WIN_CERT_P12_BASE64" ]; then
+              export WIN_CSC_LINK="$WIN_CERT_P12_BASE64" WIN_CSC_KEY_PASSWORD="$WIN_CERT_PASSWORD"
+            else
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+            fi
+          fi
+          npx electron-builder ${{ matrix.platform }} --publish always $EXTRA
