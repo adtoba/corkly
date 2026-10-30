@@ -6,7 +6,7 @@
   // ---------- platform bridge (falls back to localStorage in a plain browser) ----------
   const api = window.corkly || {
     platform: 'web',
-    info: async () => ({ imagesBase: '' }),
+    info: async () => ({ imagesBase: '', firebase: window.__corklyFirebase || null }),
     load: async () => { try { return localStorage.getItem('corkly'); } catch { return null; } },
     save: async (j) => { try { localStorage.setItem('corkly', j); } catch {} },
     saveSync: (j) => { try { localStorage.setItem('corkly', j); } catch {} },
@@ -22,6 +22,10 @@
     async setMode(m) { location.search = m === 'widget' ? '?mode=widget' : ''; },
     async hideWindow() {},
     async openTip() { window.open('https://ko-fi.com/', '_blank'); },
+    readImage: null,
+    async showWindow() { window.focus(); },
+    async pendingJoin() { return null; },
+    onJoinLink() {},
     async checkUpdates() { return { state: 'dev' }; },
     async installUpdate() {},
     onUpdate() {},
@@ -161,6 +165,7 @@
       pin: { style: type === 'photo' ? 'tape' : 'pin', color: pick(PIN_COLORS), tape: pick(TAPES) },
       data: { ...def.data(), ...data },
     };
+    if (board.cloud) stampAuthor(item);
     board.items.push(item);
     return item;
   }
@@ -229,6 +234,7 @@
     }
     scheduleSave();
     updateHint();
+    if (board.cloud) cloudPush(board);
   }
   let commitTimer = null;
   const commitSoon = () => { clearTimeout(commitTimer); commitTimer = setTimeout(commit, 700); };
@@ -335,6 +341,14 @@
     if (item.type === 'list') renderList(item);
     if (item.type === 'photo') renderPhoto(item);
     if (item.type === 'link') renderLinkMeta(item);
+    if (board.cloud) {
+      if (item.authorName && item.authorId !== myUid()) el.insertAdjacentHTML('beforeend', `<div class="by">— ${esc(item.authorName)}</div>`);
+      if (board.cloud.unseen && board.cloud.unseen.includes(item.id)) el.insertAdjacentHTML('beforeend', '<div class="new-sticker">NEW</div>');
+      if (!canTouch(item)) {
+        el.classList.add('locked');
+        el.querySelectorAll('[contenteditable]').forEach((f) => f.setAttribute('contenteditable', 'false'));
+      }
+    }
     applyItem(item);
     if (arrive) {
       el.classList.add('arrive');
@@ -389,9 +403,14 @@
   function renderPhoto(item) {
     const ph = els.get(item.id).querySelector('.ph');
     const d = item.data;
-    const src = d.file ? imagesBase + encodeURIComponent(d.file) : d.src;
+    const src = d.file && imagesBase ? imagesBase + encodeURIComponent(d.file) : (d.src || d.url);
     const ratio = clamp(d.ratio || 1, 0.6, 1.5);
     ph.style.aspectRatio = `${1} / ${ratio}`;
+    if (!src && d.cloudImage) {
+      ph.classList.remove('empty');
+      ph.innerHTML = '<div class="developing"><span>developing…</span></div>';
+      return;
+    }
     if (src) {
       ph.classList.remove('empty');
       ph.innerHTML = `<img alt="" draggable="false" src="${esc(src)}" />`;
@@ -450,6 +469,7 @@
   }
 
   function removeItem(id) {
+    if (!canTouch(getItem(id))) return nope(getItem(id));
     const el = els.get(id);
     board.items = board.items.filter((i) => i.id !== id);
     board.strings = board.strings.filter((s) => s.from !== id && s.to !== id);
@@ -474,6 +494,7 @@
     copy.x += 34; copy.y += 34; copy.z = topZ();
     copy.rot = +rand(-6, 6).toFixed(1);
     if (copy.type === 'list') copy.data.items.forEach((i) => (i.id = uid()));
+    if (board.cloud) stampAuthor(copy);
     board.items.push(copy);
     buildItem(copy, { arrive: true });
     select(copy.id);
@@ -526,7 +547,7 @@
     if (api.pickImages) {
       const [img] = await api.pickImages();
       if (!img) return;
-      item.data.file = img.file; item.data.ratio = img.ratio; delete item.data.src;
+      item.data.file = img.file; item.data.ratio = img.ratio; delete item.data.src; delete item.data.cloudImage;
       renderPhoto(item); Sound.play('pin'); commit();
     } else {
       const input = $('#filePick');
@@ -534,6 +555,7 @@
         const f = input.files[0]; input.value = '';
         if (!f) return;
         Object.assign(item.data, await photoDataFromFile(f));
+        delete item.data.cloudImage;
         renderPhoto(item); Sound.play('pin'); commit();
       };
       input.click();
@@ -597,7 +619,13 @@
     e.stopPropagation();
     closeMenu();
     selectString(null);
+    markSeen(item.id);
     if (mode === 'yarn') { e.preventDefault(); yarnClick(item); return; }
+    if (!canTouch(item)) {
+      select(item.id);
+      if (!e.target.closest('.tk-open')) { e.preventDefault(); if (!e.target.closest('button')) nope(item); }
+      return;
+    }
     if (e.target.closest('.resize')) {
       e.preventDefault();
       select(item.id);
@@ -748,6 +776,10 @@
     }
   });
 
+  world.addEventListener('pointerover', (e) => {
+    const it = e.target.closest('.item');
+    if (it && it.querySelector('.new-sticker')) setTimeout(() => markSeen(it.dataset.id), 1200);
+  });
   world.addEventListener('focusin', (e) => {
     const it = e.target.closest('.item');
     if (it) { it.classList.add('editing'); select(it.dataset.id); }
@@ -775,6 +807,7 @@
     if (!itemEl) return;
     const item = getItem(itemEl.dataset.id);
     if (!item || mode === 'yarn') return;
+    if (!canTouch(item) && !e.target.closest('.tk-open')) return;
     if (e.target.closest('.chk')) {
       const liEl = e.target.closest('li');
       const li = item.data.items.find((i) => i.id === liEl.dataset.li);
@@ -821,7 +854,7 @@
     const a = yarnFrom, b = item.id;
     const exists = board.strings.some((s) => (s.from === a && s.to === b) || (s.from === b && s.to === a));
     if (!exists) {
-      const s = { id: uid(), from: a, to: b, color: yarnColor };
+      const s = { id: uid(), from: a, to: b, color: yarnColor, authorId: myUid() || undefined };
       board.strings.push(s);
       syncStrings();
       const o = strEls.get(s.id);
@@ -884,6 +917,8 @@
     scissors.classList.toggle('show', !!id);
   }
   function cutString(id) {
+    const st = board.strings.find((x) => x.id === id);
+    if (st && !canTouchString(st)) { selectString(null); return toast('Only the person who tied that string can cut it'); }
     const o = strEls.get(id);
     selectString(null);
     Sound.play('snip');
@@ -981,6 +1016,12 @@
 
   function openItemMenu(item, x, y) {
     const entries = [];
+    if (!canTouch(item)) {
+      entries.push({ label: `pinned by ${item.authorName || 'someone'}` });
+      entries.push({ label: 'Tie yarn from here', key: 'Y', action: () => { setMode('yarn'); yarnClick(item); } });
+      if (item.type === 'link' && item.data.url) entries.push({ label: 'Open link', action: () => api.openLink(normalizeUrl(item.data.url)) });
+      return openMenu(x, y, entries);
+    }
     if (item.type === 'note') {
       entries.push({ label: 'paper colour' });
       entries.push({
@@ -1084,6 +1125,7 @@
       { transform: 'translate(-5px,2px)' }, { transform: 'translate(3px,-1px)' }, { transform: 'translate(0,0)' },
     ], { duration: 520, easing: 'ease-out' });
     board.items.forEach((it) => {
+      if (!canTouch(it)) return jiggle(it, rand(0, 160));
       it.rot = +rand(-8, 8).toFixed(1);
       applyItem(it);
       jiggle(it, rand(0, 160));
@@ -1171,6 +1213,7 @@
   // ---------- top bar ----------
   document.querySelectorAll('.bg-picker button').forEach((b) => {
     b.addEventListener('click', () => {
+      if (!canEditBoard()) return toast('Only the board owner (or editors) can change the surface');
       board.bg = b.dataset.bg;
       boardEl.className = 'board bg-' + board.bg;
       document.querySelectorAll('.bg-picker button').forEach((x) => x.classList.toggle('active', x.dataset.bg === board.bg));
@@ -1208,9 +1251,11 @@
     renderAll();
     resetHistory();
     scheduleSave();
+    updateUnseenBadge();
     Sound.play('whoosh');
   }
   function renameBoard() {
+    if (!canEditBoard()) return toast('Only the board owner (or editors) can rename it');
     nameEl.contentEditable = 'true';
     nameEl.focus();
     const r = document.createRange(); r.selectNodeContents(nameEl);
@@ -1226,13 +1271,21 @@
     board.name = nameEl.textContent.trim() || 'Untitled board';
     nameEl.textContent = board.name;
     scheduleSave();
+    if (board.cloud) cloudPush(board);
   });
   $('#boardBtn').addEventListener('click', (e) => {
     if (nameEl.contentEditable === 'true') return;
     const r = e.currentTarget.getBoundingClientRect();
     openMenu(r.left, r.bottom + 10, [
       { label: 'your boards' },
-      ...store.boards.map((b) => ({ label: b.name, current: b.id === board.id, action: () => b.id !== board.id && switchBoard(b.id) })),
+      ...store.boards.map((b) => {
+        const n = (b.cloud && b.cloud.unseen && b.cloud.unseen.length) || 0;
+        const tag = b.cloud ? (b.cloud.role === 'owner' ? '  · shared' : `  · from ${b.cloud.ownerName || 'a friend'}`) : '';
+        return { label: b.name + tag + (n ? `  (${n} new)` : ''), current: b.id === board.id, action: () => b.id !== board.id && switchBoard(b.id) };
+      }),
+      '-',
+      { label: board.cloud ? 'Sharing & people…' : 'Share this board…', action: openShare },
+      { label: 'Join a shared board…', action: () => openJoin() },
       '-',
       { label: '+ New board', action: () => {
         const b = newBoard('Board ' + (store.boards.length + 1));
@@ -1242,7 +1295,7 @@
         setTimeout(renameBoard, 50);
       } },
       { label: 'Rename this board', action: renameBoard },
-      ...(store.boards.length > 1 ? [{ label: 'Delete this board', danger: true, action: () => {
+      ...(store.boards.length > 1 && !board.cloud ? [{ label: 'Delete this board', danger: true, action: () => {
         if (!confirm(`Delete "${board.name}" and everything pinned on it?`)) return;
         store.boards = store.boards.filter((b) => b.id !== board.id);
         switchBoard(store.boards[0].id);
@@ -1255,6 +1308,7 @@
   window.addEventListener('keydown', (e) => {
     if (mod(e) && e.key === ',') { e.preventDefault(); openSettings(); return; }
     if (!settingsEl.hidden) { if (e.key === 'Escape') closeSettings(); return; }
+    if (isPanelOpen()) { if (e.key === 'Escape') document.querySelector('.panel-close')?.click(); return; }
     if (mod(e) && e.key.toLowerCase() === 'z' && !isEditing()) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (mod(e) && e.key.toLowerCase() === 'y' && !isEditing()) { e.preventDefault(); redo(); return; }
     if (mod(e) && (e.key === '=' || e.key === '+')) { e.preventDefault(); $('#zoomIn').click(); return; }
@@ -1360,6 +1414,7 @@
       ? 'Saved now — it kicks in once Corkly is installed (not while running from npm start).'
       : 'Your board will be waiting for you every time you log in.';
     $('#webNote').hidden = !isWebPreview;
+    paintAccount();
     document.querySelectorAll('.bg-picker button').forEach((x) => x.classList.toggle('active', x.dataset.bg === board.bg));
   }
   function openSettings() {
@@ -1501,6 +1556,689 @@
   $('#cleanBtn').onclick = () => setClean(true);
   $('#showChromeBtn').onclick = () => setClean(false);
 
+  // =========================================================
+  // ---------- shared boards (Firebase) ----------
+  // =========================================================
+  const Cloud = window.CorklyCloud && info.firebase && window.CorklyCloud.init(info.firebase) ? window.CorklyCloud : null;
+  let cloudUser = null;
+  const watchers = new Map(); // cloud board id -> unsubscribe
+  let myBoardsUnsub = null;
+  const myUid = () => (cloudUser ? cloudUser.uid : null);
+  const stable = (v) => JSON.stringify(v, (k, val) => (val && typeof val === 'object' && !Array.isArray(val)
+    ? Object.keys(val).sort().reduce((o, key) => { o[key] = val[key]; return o; }, {}) : val));
+
+  function canTouch(item, b = board) {
+    const c = b && b.cloud;
+    if (!c || c.role !== 'pin') return true;
+    return !!item && item.authorId === myUid();
+  }
+  const canTouchString = (s, b = board) => !b.cloud || b.cloud.role !== 'pin' || s.authorId === myUid();
+  const canEditBoard = (b = board) => !b.cloud || b.cloud.role !== 'pin';
+  function nope(item) {
+    Sound.play('pop');
+    toast(item && item.authorName ? `Only ${item.authorName} (or the board owner) can change that one` : 'You can add things here, but not change this');
+  }
+
+  function stampAuthor(item) {
+    if (!board.cloud || !cloudUser) return;
+    item.authorId = cloudUser.uid;
+    item.authorName = cloudUser.name;
+    item.createdAt = Date.now();
+  }
+
+  // What gets stored in the cloud for an item (no local file names, no huge data URLs)
+  function toCloudItem(item) {
+    const data = { ...item.data };
+    delete data.file;
+    if (data.src && /^(data|blob):/.test(String(data.src))) delete data.src;
+    return {
+      id: item.id, type: item.type, x: item.x, y: item.y, w: item.w, rot: item.rot, z: item.z,
+      pin: item.pin, data,
+      authorId: item.authorId || null, authorName: item.authorName || null, createdAt: item.createdAt || null,
+    };
+  }
+  const toCloudString = (s) => ({ id: s.id, from: s.from, to: s.to, color: s.color, authorId: s.authorId || null });
+  const syncOf = (b) => b._sync || (b._sync = { items: new Map(), strings: new Map(), meta: '', ready: false, uploading: new Set() });
+
+  function cloudFail(e) {
+    console.warn('cloud write failed', e);
+    if (e && e.code === 'permission-denied') toast('Couldn’t save that change — you don’t have permission');
+  }
+
+  // ---------- photos on shared boards ----------
+  // Photos travel as shrunk JPEGs stored in Firestore (each well under its 1 MB limit).
+  const MAX_IMG_BYTES = 700 * 1024;
+  async function photoBytes(item) {
+    const d = item.data;
+    if (d.file && api.readImage) {
+      const img = await api.readImage(d.file);
+      if (img) return new Blob([img.bytes], { type: img.type });
+    }
+    if (d.src && String(d.src).startsWith('data:')) {
+      // decode by hand — fetch() of data: URLs is blocked by the page's security policy
+      const [head, b64] = d.src.split(',');
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return new Blob([arr], { type: (head.match(/data:([^;]+)/) || [])[1] || 'image/png' });
+    }
+    return null;
+  }
+  async function shrinkPhoto(blob) {
+    const bmp = await createImageBitmap(blob);
+    let max = 1400, quality = 0.84, out = null;
+    for (let i = 0; i < 6; i++) {
+      const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+      const canvas = new OffscreenCanvas(w, h);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); // transparent PNGs get a white backing
+      ctx.drawImage(bmp, 0, 0, w, h);
+      out = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      if (out.size <= MAX_IMG_BYTES) break;
+      max = Math.round(max * 0.8); quality = Math.max(0.6, quality - 0.06);
+    }
+    const ratio = bmp.height / bmp.width || 1;
+    bmp.close && bmp.close();
+    return { bytes: new Uint8Array(await out.arrayBuffer()), ratio };
+  }
+  async function sharePhoto(b, item) {
+    const s = syncOf(b);
+    if (s.uploading.has(item.id) || (s.failed && s.failed.has(item.id))) return false;
+    s.uploading.add(item.id);
+    try {
+      const blob = await photoBytes(item);
+      if (!blob) return false;
+      const { bytes, ratio } = await shrinkPhoto(blob);
+      const imageId = uid();
+      await Cloud.saveImage(b.cloud.id, imageId, bytes, 'image/jpeg', ratio);
+      item.data.cloudImage = imageId;
+      if (item.data.file) (store.imageCache = store.imageCache || {})[imageId] = item.data.file;
+      scheduleSave();
+      return true;
+    } catch (e) {
+      (s.failed = s.failed || new Set()).add(item.id); // don't retry on every change; retried next launch
+      console.warn('photo upload failed', e);
+      return false;
+    } finally { s.uploading.delete(item.id); }
+  }
+  const fetchingImages = new Set();
+  // Download a photo someone else pinned, keep it on this computer, and show it.
+  async function fetchPhoto(b, item) {
+    const imageId = item.data.cloudImage;
+    if (!imageId || fetchingImages.has(imageId)) return;
+    fetchingImages.add(imageId);
+    try {
+      const img = await Cloud.loadImage(b.cloud.id, imageId);
+      if (!img) return;
+      if (api.imageFromBuffer) {
+        const saved = await api.imageFromBuffer(img.bytes.buffer.slice(img.bytes.byteOffset, img.bytes.byteOffset + img.bytes.byteLength), 'jpg');
+        (store.imageCache = store.imageCache || {})[imageId] = saved.file;
+        item.data.file = saved.file;
+      } else {
+        item.data.src = URL.createObjectURL(new Blob([img.bytes], { type: img.mime || 'image/jpeg' }));
+      }
+      if (!item.data.ratio) item.data.ratio = img.ratio;
+      if (b === board && els.get(item.id)) renderPhoto(item);
+      scheduleSave();
+    } catch (e) {
+      console.warn('photo download failed', e);
+    } finally { fetchingImages.delete(imageId); }
+  }
+  const needsShare = (item) => item.type === 'photo' && !item.data.cloudImage && (item.data.file || String(item.data.src || '').startsWith('data:'));
+
+  // Push local changes (diffed against what we last saw in the cloud)
+  function cloudPush(b = board) {
+    if (!Cloud || !b.cloud || !cloudUser || b.cloud.uid !== cloudUser.uid) return;
+    const s = syncOf(b);
+    if (!s.ready) { s.pushLater = true; return; }
+    const cid = b.cloud.id;
+    const ids = new Set();
+    for (const item of b.items) {
+      ids.add(item.id);
+      if (!canTouch(item, b)) continue;
+      if (needsShare(item) && !(s.failed && s.failed.has(item.id))) {
+        // upload the photo first, then the pin (if the upload fails, the pin is shared without its photo)
+        sharePhoto(b, item).then(() => cloudPush(b));
+        continue;
+      }
+      if (item.data && item.data.cloudImage) (s.images = s.images || new Map()).set(item.id, item.data.cloudImage);
+      const c = toCloudItem(item);
+      if (!c.authorId) { c.authorId = cloudUser.uid; c.authorName = cloudUser.name; item.authorId = c.authorId; item.authorName = c.authorName; }
+      const key = stable(c);
+      if (s.items.get(item.id) === key) continue;
+      s.items.set(item.id, key);
+      Cloud.writeItem(cid, c).catch(cloudFail);
+    }
+    for (const id of [...s.items.keys()]) {
+      if (!ids.has(id)) {
+        s.items.delete(id);
+        Cloud.deleteItem(cid, id).catch(cloudFail);
+        const img = s.images && s.images.get(id);
+        if (img) { s.images.delete(id); Cloud.deleteImage(cid, img).catch(() => {}); }
+      }
+    }
+    const sids = new Set();
+    for (const str of b.strings) {
+      sids.add(str.id);
+      if (!str.authorId) str.authorId = cloudUser.uid;
+      const c = toCloudString(str);
+      const key = stable(c);
+      if (s.strings.get(str.id) === key) continue;
+      if (!canTouchString(str, b) && s.strings.has(str.id)) continue;
+      s.strings.set(str.id, key);
+      Cloud.writeString(cid, c).catch(cloudFail);
+    }
+    for (const id of [...s.strings.keys()]) {
+      if (!sids.has(id)) { s.strings.delete(id); Cloud.deleteString(cid, id).catch(cloudFail); }
+    }
+    if (canEditBoard(b)) {
+      const meta = stable({ name: b.name, bg: b.bg });
+      if (s.meta && s.meta !== meta) Cloud.updateBoard(cid, { name: b.name, bg: b.bg }).catch(cloudFail);
+      s.meta = meta;
+    }
+  }
+
+  function previewOf(it) {
+    const d = it.data || {};
+    if (it.type === 'note') return (d.text || 'a sticky note').slice(0, 120);
+    if (it.type === 'card') return d.title || (d.text || 'an index card').slice(0, 120);
+    if (it.type === 'photo') return d.caption ? `a photo — “${d.caption}”` : 'a photo';
+    if (it.type === 'list') return `a checklist: ${d.title || 'To do'}`;
+    if (it.type === 'link') return d.title || d.url || 'a link';
+    return 'something';
+  }
+  function notify(title, body) {
+    try {
+      const n = new Notification(title, { body });
+      n.onclick = () => { api.showWindow && api.showWindow(); };
+    } catch {}
+  }
+  function updateUnseenBadge() {
+    const total = store.boards.reduce((n, b) => n + ((b.cloud && b.cloud.unseen && b.cloud.unseen.length) || 0), 0);
+    $('#boardBtn').classList.toggle('has-new', total > 0);
+    $('#boardBtn').dataset.count = total > 9 ? '9+' : String(total);
+    $('#boardBtn').classList.toggle('is-shared', !!board.cloud);
+  }
+  function markSeen(id) {
+    const c = board.cloud;
+    if (!c || !c.unseen || !c.unseen.includes(id)) return;
+    c.unseen = c.unseen.filter((x) => x !== id);
+    els.get(id)?.querySelector('.new-sticker')?.remove();
+    updateUnseenBadge();
+    scheduleSave();
+  }
+
+  // Apply item changes that came from the cloud
+  function applyRemoteItems(b, changes, isFirst, allIds) {
+    const s = syncOf(b);
+    const isCur = b === board;
+    let touched = false;
+    const fresh = [];
+    const remoteIds = new Set(allIds || []);
+    for (const ch of changes) {
+      if (ch.type === 'removed') {
+        s.items.delete(ch.id);
+        const idx = b.items.findIndex((i) => i.id === ch.id);
+        if (idx === -1) continue;
+        b.items.splice(idx, 1);
+        b.strings = b.strings.filter((x) => x.from !== ch.id && x.to !== ch.id);
+        touched = true;
+        if (isCur) {
+          const el = els.get(ch.id);
+          els.delete(ch.id);
+          if (selectedId === ch.id) selectedId = null;
+          if (el) { el.classList.add('crumpling'); setTimeout(() => el.remove(), 720); }
+        }
+        continue;
+      }
+      const d = ch.data;
+      remoteIds.add(ch.id);
+      const incoming = {
+        id: ch.id, type: d.type, x: d.x, y: d.y, w: d.w, rot: d.rot, z: d.z, pin: d.pin, data: d.data || {},
+        authorId: d.authorId || null, authorName: d.authorName || null, createdAt: d.createdAt || null,
+      };
+      const key = stable(toCloudItem(incoming));
+      if (s.items.get(ch.id) === key) continue;
+      s.items.set(ch.id, key);
+      touched = true;
+      const local = b.items.find((i) => i.id === ch.id);
+      const cached = incoming.data.cloudImage && store.imageCache && store.imageCache[incoming.data.cloudImage];
+      if (cached) incoming.data.file = cached;
+      if (local) {
+        if (local.data && local.data.cloudImage && local.data.cloudImage === incoming.data.cloudImage) {
+          if (local.data.file) incoming.data.file = local.data.file;
+          if (local.data.src && /^(data|blob):/.test(local.data.src)) incoming.data.src = local.data.src;
+        }
+        const el = isCur && els.get(ch.id);
+        if (isCur && drag && drag.item === local) continue; // you're holding it — your drop wins
+        if (el && el.contains(document.activeElement)) {
+          Object.assign(local, { x: incoming.x, y: incoming.y, w: incoming.w, rot: incoming.rot, z: incoming.z, pin: incoming.pin });
+          applyItem(local);
+          continue;
+        }
+        Object.assign(local, incoming);
+        if (el) {
+          const wasSel = selectedId === local.id;
+          el.remove(); els.delete(local.id);
+          buildItem(local);
+          if (wasSel) { selectedId = null; select(local.id); }
+        }
+      } else {
+        b.items.push(incoming);
+        const byOther = incoming.authorId && incoming.authorId !== myUid();
+        const newSinceLastVisit = isFirst ? (incoming.createdAt || 0) > (b.cloud.lastSync || 0) : true;
+        if (byOther && newSinceLastVisit && b.cloud.lastSync) {
+          b.cloud.unseen = [...new Set([...(b.cloud.unseen || []), incoming.id])];
+          fresh.push(incoming);
+        }
+        if (isCur) buildItem(incoming, { arrive: !isFirst });
+      }
+    }
+    if (isFirst) {
+      // Things that only exist locally: keep (and upload) ones made since the last sync, drop the rest.
+      const keep = (it) => remoteIds.has(it.id) || (it.createdAt || 0) > (b.cloud.lastSync || 0);
+      const gone = b.items.filter((it) => !keep(it));
+      if (gone.length) {
+        b.items = b.items.filter(keep);
+        if (isCur) gone.forEach((it) => { els.get(it.id)?.remove(); els.delete(it.id); });
+        touched = true;
+      }
+    }
+    for (const it of b.items) {
+      if (it.type === 'photo' && it.data.cloudImage && !it.data.file && !it.data.src) fetchPhoto(b, it);
+    }
+    if (fresh.length) {
+      const who = fresh[0].authorName || 'Someone';
+      if (fresh.length === 1) notify(`${who} pinned something on “${b.name}”`, previewOf(fresh[0]));
+      else notify(`${fresh.length} new things on “${b.name}”`, `${who}${fresh.some((f) => f.authorName !== who) ? ' and others' : ''} added to your board`);
+      if (isCur) Sound.play('pin');
+    }
+    afterRemote(b, touched);
+  }
+
+  function applyRemoteStrings(b, changes, isFirst, allIds) {
+    const s = syncOf(b);
+    let touched = false;
+    const remoteIds = new Set(allIds || []);
+    for (const ch of changes) {
+      if (ch.type === 'removed') {
+        s.strings.delete(ch.id);
+        const before = b.strings.length;
+        b.strings = b.strings.filter((x) => x.id !== ch.id);
+        touched = touched || before !== b.strings.length;
+        continue;
+      }
+      remoteIds.add(ch.id);
+      const inc = toCloudString({ id: ch.id, ...ch.data });
+      const key = stable(inc);
+      if (s.strings.get(ch.id) === key) continue;
+      s.strings.set(ch.id, key);
+      const local = b.strings.find((x) => x.id === ch.id);
+      if (local) {
+        Object.assign(local, inc);
+        if (b === board) strEls.get(local.id)?.g.style.setProperty('--yarn', local.color);
+      } else b.strings.push(inc);
+      touched = true;
+    }
+    if (isFirst) {
+      const before = b.strings.length;
+      b.strings = b.strings.filter((x) => remoteIds.has(x.id));
+      touched = touched || before !== b.strings.length;
+    }
+    afterRemote(b, touched);
+  }
+
+  function afterRemote(b, touched) {
+    b.cloud.lastSync = Date.now();
+    if (!touched) return;
+    if (b === board) {
+      syncStrings();
+      updateHint();
+      resetHistory(); // undo only covers your own changes made after this
+    }
+    updateUnseenBadge();
+    scheduleSave();
+  }
+
+  function applyRemoteBoard(b, data) {
+    const s = syncOf(b);
+    s.meta = stable({ name: data.name, bg: data.bg });
+    let changed = false;
+    if (data.name && data.name !== b.name) { b.name = data.name; changed = true; }
+    if (data.bg && data.bg !== b.bg) { b.bg = data.bg; changed = true; }
+    b.cloud.ownerName = data.ownerName || b.cloud.ownerName;
+    if (changed && b === board) {
+      boardEl.className = 'board bg-' + board.bg;
+      $('#boardName').textContent = board.name;
+      document.querySelectorAll('.bg-picker button').forEach((x) => x.classList.toggle('active', x.dataset.bg === board.bg));
+    }
+    if (changed) scheduleSave();
+  }
+
+  function detachCloud(b, message) {
+    const un = watchers.get(b.cloud.id);
+    if (un) { un(); watchers.delete(b.cloud.id); }
+    const name = b.name;
+    if (Cloud) Cloud.forgetBoard(b.cloud.id);
+    delete b.cloud;
+    delete b._sync;
+    if (message) toast(message.replace('%s', name));
+    if (b === board) renderAll();
+    updateUnseenBadge();
+    scheduleSave();
+  }
+
+  function startWatching(b) {
+    if (!Cloud || !cloudUser || !b.cloud || b.cloud.uid !== cloudUser.uid || watchers.has(b.cloud.id)) return;
+    const s = syncOf(b);
+    let gotItems = false, gotStrings = false;
+    const ready = () => {
+      if (!gotItems || !gotStrings || s.ready) return;
+      s.ready = true;
+      cloudPush(b); // upload anything made while offline
+    };
+    const un = Cloud.watchBoard(b.cloud.id, {
+      onBoard: (d) => applyRemoteBoard(b, d),
+      onItems: (ch, first, all) => { applyRemoteItems(b, ch, first, all); gotItems = true; ready(); },
+      onStrings: (ch, first, all) => { applyRemoteStrings(b, ch, first, all); gotStrings = true; ready(); },
+      onLost: () => detachCloud(b, '“%s” isn’t shared with you anymore — you’ve kept a copy'),
+    });
+    watchers.set(b.cloud.id, un);
+  }
+  function stopWatchingAll() {
+    for (const un of watchers.values()) un();
+    watchers.clear();
+    store.boards.forEach((b) => { if (b._sync) b._sync.ready = false; });
+    if (myBoardsUnsub) { myBoardsUnsub(); myBoardsUnsub = null; }
+  }
+
+  function onSignedIn() {
+    store.boards.forEach(startWatching);
+    myBoardsUnsub = Cloud.watchMyBoards((list) => {
+      for (const entry of list) {
+        if (store.boards.some((b) => b.cloud && b.cloud.id === entry.id)) continue;
+        // a board you joined on another computer
+        const b = { ...newBoard(entry.name || 'Shared board'), cloud: { id: entry.id, role: entry.role, uid: cloudUser.uid, ownerName: entry.ownerName || '', unseen: [], lastSync: 0 } };
+        store.boards.push(b);
+        startWatching(b);
+        scheduleSave();
+      }
+    });
+  }
+
+  function initCloudAuth() {
+    if (!Cloud) return;
+    Cloud.onAuth((u) => {
+      const was = cloudUser && cloudUser.uid;
+      cloudUser = u;
+      if (u && u.uid !== was) onSignedIn();
+      if (!u) stopWatchingAll();
+      if (board) updateUnseenBadge();
+      if (!settingsEl.hidden) paintAccount();
+    });
+  }
+
+  // ---------- panels (account, share, join) ----------
+  function openPanel(title, cls = '') {
+    closeMenu();
+    document.querySelector('.panel-backdrop')?.remove();
+    const back = document.createElement('div');
+    back.className = 'settings-backdrop panel-backdrop';
+    back.innerHTML = `<section class="settings-card panel ${cls}" role="dialog"><span class="settings-pin"></span><h2>${esc(title)}</h2><div class="panel-body"></div><button class="done-btn panel-close">Done</button></section>`;
+    document.body.appendChild(back);
+    const close = () => { back.remove(); };
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    back.querySelector('.panel-close').onclick = close;
+    back.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+    Sound.play('pop');
+    return { el: back, body: back.querySelector('.panel-body'), close, setTitle: (t) => (back.querySelector('h2').textContent = t) };
+  }
+  const isPanelOpen = () => !!document.querySelector('.panel-backdrop');
+
+  function notConfigured(p) {
+    p.body.innerHTML = `<p class="panel-text">Sharing needs a Firebase project connected to this copy of Corkly.</p><p class="panel-note">Add your project’s web config to <code>src/firebase-config.json</code> — the steps are in <b>CLOUD.md</b>.</p>`;
+  }
+
+  function openAccount(then) {
+    const p = openPanel(cloudUser ? 'Your account' : 'Sign in to share');
+    if (!Cloud) return notConfigured(p);
+    if (cloudUser) {
+      p.body.innerHTML = `<div class="who"><span class="avatar">${esc((cloudUser.name || '?')[0].toUpperCase())}</span><span><b>${esc(cloudUser.name)}</b><small>${esc(cloudUser.email || '')}</small></span></div>
+        <p class="panel-note">Your shared boards sync while you’re signed in.</p>
+        <button class="pill-btn ghost" id="signOutBtn">Sign out</button>`;
+      p.body.querySelector('#signOutBtn').onclick = async () => { await Cloud.signOut(); p.close(); toast('Signed out — shared boards will catch up when you sign back in'); };
+      return;
+    }
+    let mode = 'in';
+    const draw = () => {
+      p.body.innerHTML = `
+        <div class="seg small"><button data-m="in" class="${mode === 'in' ? 'active' : ''}">Sign in</button><button data-m="up" class="${mode === 'up' ? 'active' : ''}">Create account</button></div>
+        <form class="auth-form">
+          ${mode === 'up' ? '<label>Your name<input name="name" autocomplete="name" placeholder="What friends call you" required></label>' : ''}
+          <label>Email<input name="email" type="email" autocomplete="email" required></label>
+          <label>Password<input name="password" type="password" autocomplete="${mode === 'up' ? 'new-password' : 'current-password'}" minlength="6" required></label>
+          <p class="form-error" hidden></p>
+          <button class="pill-btn" type="submit">${mode === 'up' ? 'Create account' : 'Sign in'}</button>
+          ${mode === 'in' ? '<button type="button" class="link-btn" id="forgotBtn">Forgot password?</button>' : ''}
+        </form>`;
+      p.body.querySelectorAll('.seg button').forEach((b) => (b.onclick = () => { mode = b.dataset.m; draw(); }));
+      const form = p.body.querySelector('form');
+      const err = p.body.querySelector('.form-error');
+      const showErr = (e) => { err.hidden = false; err.textContent = Cloud.friendlyError(e); };
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const f = new FormData(form);
+        const btn = form.querySelector('[type=submit]');
+        btn.disabled = true; err.hidden = true;
+        try {
+          cloudUser = mode === 'up'
+            ? await Cloud.signUp(f.get('email'), f.get('password'), f.get('name'))
+            : await Cloud.signIn(f.get('email'), f.get('password'));
+          p.close();
+          toast(`Hi ${cloudUser.name}!`);
+          Sound.play('check');
+          if (then) then();
+        } catch (ex) { showErr(ex); btn.disabled = false; }
+      };
+      const forgot = p.body.querySelector('#forgotBtn');
+      if (forgot) forgot.onclick = async () => {
+        const email = form.email.value.trim();
+        if (!email) { err.hidden = false; err.textContent = 'Type your email above first.'; return; }
+        try { await Cloud.resetPassword(email); err.hidden = false; err.textContent = 'Check your inbox for a reset link.'; } catch (ex) { showErr(ex); }
+      };
+      setTimeout(() => { if (form.isConnected && !form.contains(document.activeElement)) form.querySelector('input')?.focus(); }, 50);
+    };
+    draw();
+  }
+
+  function requireSignIn(then) {
+    if (!Cloud) { notConfigured(openPanel('Sharing')); return false; }
+    if (!cloudUser) { openAccount(then); return false; }
+    return true;
+  }
+
+  async function shareCurrentBoard(p) {
+    const b = board;
+    const status = p.body.querySelector('.share-status');
+    const btn = p.body.querySelector('#startShareBtn');
+    btn.disabled = true;
+    try {
+      // stamp everything as yours
+      for (const it of b.items) { if (!it.authorId) { it.authorId = cloudUser.uid; it.authorName = cloudUser.name; it.createdAt = it.createdAt || Date.now(); } }
+      for (const st of b.strings) if (!st.authorId) st.authorId = cloudUser.uid;
+      // first create the board so photos can be uploaded under it
+      const cid = await Cloud.createSharedBoard({ name: b.name, bg: b.bg, items: [], strings: [] });
+      b.cloud = { id: cid, role: 'owner', uid: cloudUser.uid, ownerName: cloudUser.name, unseen: [], lastSync: Date.now() };
+      const photos = b.items.filter(needsShare);
+      let n = 0;
+      for (const ph of photos) {
+        status.textContent = `Uploading photos… ${++n}/${photos.length}`;
+        await sharePhoto(b, ph);
+      }
+      status.textContent = 'Pinning everything up…';
+      const s = syncOf(b);
+      s.ready = true;
+      s.meta = stable({ name: b.name, bg: b.bg });
+      cloudPush(b);
+      startWatching(b);
+      scheduleSave();
+      updateUnseenBadge();
+      Sound.play('tada');
+      openShare();
+    } catch (e) {
+      status.textContent = Cloud.friendlyError(e);
+      btn.disabled = false;
+    }
+  }
+
+  function openShare() {
+    if (!requireSignIn(openShare)) return;
+    const b = board;
+    const p = openPanel(b.cloud ? `Sharing “${b.name}”` : `Share “${b.name}”`, 'share-panel');
+    if (!b.cloud) {
+      p.body.innerHTML = `
+        <p class="panel-text">Invite people to this board. They can pin notes, photos and links that show up on your board straight away — and you’ll get a little notification.</p>
+        <ul class="panel-list">
+          <li><b>Pin only</b> — they can add things and change their own pins.</li>
+          <li><b>Can edit</b> — they can move and change anything.</li>
+        </ul>
+        <p class="panel-note">The board is stored online so it can sync. Your other boards stay private on this computer.</p>
+        <button class="pill-btn" id="startShareBtn">Start sharing this board</button>
+        <p class="share-status panel-note"></p>`;
+      p.body.querySelector('#startShareBtn').onclick = () => shareCurrentBoard(p);
+      return;
+    }
+    const isOwner = b.cloud.role === 'owner';
+    const roleName = { owner: 'Owner', edit: 'Can edit', pin: 'Pin only' };
+    p.body.innerHTML = `
+      ${isOwner ? `
+      <h3>Invite someone</h3>
+      <div class="seg small" id="roleSeg"><button data-r="pin" class="active">Pin only</button><button data-r="edit">Can edit</button></div>
+      <button class="pill-btn" id="makeInvite">Create invite code</button>
+      <div class="invite-out" hidden></div>
+      <h3>Active invites</h3><div class="invite-list panel-note">Loading…</div>` : `<p class="panel-text">${esc(b.cloud.ownerName || 'Someone')} shared this board with you. You can <b>${b.cloud.role === 'edit' ? 'change anything' : 'add things and change your own pins'}</b>.</p>`}
+      <h3>People</h3><div class="member-list panel-note">Loading…</div>
+      <div class="danger-zone">${isOwner ? '<button class="link-btn danger" id="stopShare">Stop sharing this board</button>' : '<button class="link-btn danger" id="leaveBoard">Leave this board</button>'}</div>`;
+
+    const unsubs = [];
+    const origClose = p.close;
+    p.close = () => { unsubs.forEach((u) => u()); origClose(); };
+    p.el.querySelector('.panel-close').onclick = p.close;
+
+    unsubs.push(Cloud.watchMembers(b.cloud.id, (list) => {
+      const box = p.body.querySelector('.member-list');
+      if (!box) return;
+      list.sort((a, c) => (a.role === 'owner' ? -1 : c.role === 'owner' ? 1 : (a.name || '').localeCompare(c.name || '')));
+      box.innerHTML = list.map((m) => `<div class="member"><span class="avatar">${esc((m.name || '?')[0].toUpperCase())}</span><span class="m-name">${esc(m.name || m.email || 'Someone')}${m.uid === myUid() ? ' <small>(you)</small>' : ''}</span><span class="chip-role">${roleName[m.role] || m.role}</span>${isOwner && m.role !== 'owner' ? `<button class="link-btn danger" data-remove="${m.uid}">Remove</button>` : ''}</div>`).join('') || 'Just you so far.';
+      box.querySelectorAll('[data-remove]').forEach((btn) => (btn.onclick = async () => {
+        const m = list.find((x) => x.uid === btn.dataset.remove);
+        if (!confirm(`Remove ${m.name || 'this person'} from “${b.name}”?`)) return;
+        await Cloud.removeMember(b.cloud.id, m.uid).catch(cloudFail);
+      }));
+    }));
+
+    if (isOwner) {
+      let role = 'pin';
+      p.body.querySelectorAll('#roleSeg button').forEach((btn) => (btn.onclick = () => {
+        role = btn.dataset.r;
+        p.body.querySelectorAll('#roleSeg button').forEach((x) => x.classList.toggle('active', x === btn));
+      }));
+      const out = p.body.querySelector('.invite-out');
+      const showCode = (code, r) => {
+        const pretty = Cloud.prettyCode(code);
+        const link = `corkly://join/${code}`;
+        out.hidden = false;
+        out.innerHTML = `<div class="code">${pretty}</div>
+          <p class="panel-note">Send this code — they open Corkly, click the board name → <b>Join a shared board</b>, and type it in. It works for 14 days and lets them <b>${r === 'edit' ? 'edit anything' : 'pin things'}</b>.</p>
+          <div class="row"><button class="pill-btn small" data-copy="${esc(`Join my Corkly board “${b.name}”! Open Corkly → board menu → Join a shared board, and enter: ${pretty}  (or click ${link})`)}">Copy invite message</button><button class="pill-btn small ghost" data-copy="${pretty}">Copy code</button></div>`;
+        out.querySelectorAll('[data-copy]').forEach((x) => (x.onclick = async () => {
+          try { await navigator.clipboard.writeText(x.dataset.copy); toast('Copied!'); } catch { toast('Couldn’t copy — select the code instead'); }
+        }));
+      };
+      p.body.querySelector('#makeInvite').onclick = async (e) => {
+        e.target.disabled = true;
+        try { const code = await Cloud.createInvite(b.cloud.id, b.name, role); showCode(code, role); Sound.play('pin'); } catch (ex) { toast(Cloud.friendlyError(ex)); }
+        e.target.disabled = false;
+      };
+      unsubs.push(Cloud.watchInvites(b.cloud.id, (list) => {
+        const box = p.body.querySelector('.invite-list');
+        if (!box) return;
+        box.innerHTML = list.length ? list.map((i) => `<div class="member"><span class="m-name code-sm">${Cloud.prettyCode(i.code)}</span><span class="chip-role">${roleName[i.role]}</span><small>until ${i.expiresAt.toDate().toLocaleDateString()}</small><button class="link-btn danger" data-revoke="${i.code}">Turn off</button></div>`).join('') : 'No active invites.';
+        box.querySelectorAll('[data-revoke]').forEach((btn) => (btn.onclick = () => Cloud.revokeInvite(btn.dataset.revoke).catch(cloudFail)));
+      }));
+      p.body.querySelector('#stopShare').onclick = async () => {
+        if (!confirm(`Stop sharing “${b.name}”? Everyone else loses access. You keep everything on your board.`)) return;
+        try {
+          await Cloud.stopSharing(b.cloud.id);
+          p.close();
+          detachCloud(b, '“%s” is private again');
+        } catch (ex) { toast(Cloud.friendlyError(ex)); }
+      };
+    } else {
+      p.body.querySelector('#leaveBoard').onclick = async () => {
+        if (!confirm(`Leave “${b.name}”? It will disappear from your boards.`)) return;
+        const cid = b.cloud.id;
+        p.close();
+        const un = watchers.get(cid); if (un) { un(); watchers.delete(cid); }
+        await Cloud.leaveBoard(cid).catch(() => {});
+        store.boards = store.boards.filter((x) => x !== b);
+        if (!store.boards.length) store.boards.push(newBoard('My board'));
+        switchBoard(store.boards[0].id);
+        toast(`You left “${b.name}”`);
+      };
+    }
+  }
+
+  function openJoin(prefill = '') {
+    if (!requireSignIn(() => openJoin(prefill))) return;
+    const p = openPanel('Join a shared board');
+    p.body.innerHTML = `
+      <p class="panel-text">Got an invite code from a friend? Type it in and their board will appear in your boards.</p>
+      <form class="auth-form"><label>Invite code<input name="code" class="code-input" placeholder="ABCDE-FGHJK" autocomplete="off" spellcheck="false" value="${esc(prefill)}"></label>
+      <p class="form-error" hidden></p><button class="pill-btn" type="submit">Join board</button></form>`;
+    const form = p.body.querySelector('form');
+    const err = p.body.querySelector('.form-error');
+    setTimeout(() => form.code.focus(), 50);
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('[type=submit]');
+      btn.disabled = true; err.hidden = true;
+      try {
+        const j = await Cloud.joinByCode(form.code.value);
+        let b = store.boards.find((x) => x.cloud && x.cloud.id === j.id);
+        if (!b) {
+          b = { ...newBoard(j.name), bg: j.bg || 'cork', cloud: { id: j.id, role: j.role, uid: cloudUser.uid, ownerName: j.ownerName || '', unseen: [], lastSync: 0 } };
+          store.boards.push(b);
+        }
+        p.close();
+        switchBoard(b.id);
+        startWatching(b);
+        Sound.play('tada');
+        toast(`You joined “${j.name}”${j.ownerName ? ` by ${j.ownerName}` : ''}!`);
+      } catch (ex) {
+        err.hidden = false;
+        err.textContent = ex.code === 'bad-code' || ex.code === 'expired' ? ex.message : Cloud.friendlyError(ex);
+        btn.disabled = false;
+      }
+    };
+  }
+  if (api.onJoinLink) api.onJoinLink((code) => openJoin(code));
+
+  // Settings: account row
+  function paintAccount() {
+    const row = $('#accountRow');
+    if (!row) return;
+    if (!Cloud) { row.querySelector('b').textContent = 'Shared boards'; row.querySelector('small').textContent = 'Not set up in this build yet (see CLOUD.md).'; row.querySelector('button').hidden = true; return; }
+    row.querySelector('button').hidden = false;
+    row.querySelector('b').textContent = cloudUser ? cloudUser.name : 'Not signed in';
+    row.querySelector('small').textContent = cloudUser ? cloudUser.email : 'Sign in to share boards with friends.';
+    row.querySelector('button').textContent = cloudUser ? 'Account' : 'Sign in';
+  }
+  $('#accountBtn').onclick = () => { closeSettings(); openAccount(); };
+  $('#shareBtn').onclick = openShare;
+
+
   // ---------- boot ----------
   await loadStore();
   board = store.boards.find((b) => b.id === store.currentId) || store.boards[0];
@@ -1516,4 +2254,7 @@
   requestAnimationFrame(frame);
   scheduleSave();
   maybeNudge();
+  updateUnseenBadge();
+  initCloudAuth();
+  if (api.pendingJoin) api.pendingJoin().then((code) => code && openJoin(code));
 })();

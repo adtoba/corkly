@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self' file:; img-src 'self' file: data: blob: https:; style-src 'self' file: 'unsafe-inline'; font-src 'self' file: data:; script-src 'self' file:" />
+        content="default-src 'self' file:; img-src 'self' file: data: blob: https: http://127.0.0.1:*; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://firebasestorage.googleapis.com http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' file: 'unsafe-inline'; font-src 'self' file: data:; script-src 'self' file:" />
   <title>Corkly</title>
   <link rel="stylesheet" href="../../node_modules/@fontsource/caveat/400.css" />
   <link rel="stylesheet" href="../../node_modules/@fontsource/caveat/700.css" />
@@ -52,6 +52,9 @@
     </button>
     <button id="cleanBtn" class="icon-btn" title="Hide toolbars — just the board (H)">
       <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="shareBtn" class="icon-btn" title="Share this board">
+      <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 19c.6-3.4 3-5.2 6-5.2s5.4 1.8 6 5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18 8v6M15 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <button id="coffeeBtn" class="icon-btn" title="Corkly is free — buy me a coffee?">
       <svg class="cup" viewBox="0 0 48 48" width="22" height="22"><g class="steam" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".55"><path d="M17 12c-2-3 2-5 0-8"/><path d="M24 12c-2-3 2-5 0-8"/><path d="M31 12c-2-3 2-5 0-8"/></g><path d="M9 17h28v11a12 12 0 0 1-12 12h-4A12 12 0 0 1 9 28z" fill="#fff3dc" stroke="#2f2418" stroke-width="2.4" stroke-linejoin="round"/><path d="M37 21h2.5a5 5 0 0 1 0 10H36" fill="none" stroke="#2f2418" stroke-width="2.4"/><path d="M9 22h28" stroke="#c98b4f" stroke-width="5"/><path d="M19 29.5c0-2 3-3 4-1 1-2 4-1 4 1 0 2.5-4 4.5-4 4.5s-4-2-4-4.5z" fill="#e63946"/></svg>
@@ -141,6 +144,9 @@
       <label class="opt"><span class="opt-text"><b>Keep running when closed</b><small id="trayNote">Closing tucks Corkly into the menu bar instead of quitting.</small></span><input type="checkbox" data-set="closeToTray" /><span class="switch"></span></label>
       <label class="opt"><span class="opt-text"><b>Show / hide shortcut</b><small>Press <kbd id="shortcutLabel">Ctrl + Shift + Space</kbd> from anywhere.</small></span><input type="checkbox" data-set="shortcut" /><span class="switch"></span></label>
 
+      <h3>Shared boards</h3>
+      <div class="opt account-row" id="accountRow"><span class="opt-text"><b>Not signed in</b><small>Sign in to share boards with friends.</small></span><button class="pill-btn small" id="accountBtn">Sign in</button></div>
+
       <h3>Look &amp; feel</h3>
       <label class="opt"><span class="opt-text"><b>Sound effects</b><small>Pops, thunks and twangs.</small></span><input type="checkbox" id="soundSet" /><span class="switch"></span></label>
       <div class="opt surfaces"><span class="opt-text"><b>Board surface</b></span><div class="bg-picker" id="bgPicker2">
@@ -186,6 +192,7 @@
   <div id="toast"></div>
   <input type="file" id="filePick" accept="image/*" multiple hidden />
 
+  <script src="cloud.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

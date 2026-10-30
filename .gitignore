@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .DS_Store
+src/renderer/cloud.js
+test/r/
+*.log

@@ -41,6 +41,35 @@ function setupUpdates() {
   setInterval(check, 6 * 60 * 60 * 1000);
 }
 
+// ---------- shared boards (Firebase) ----------
+// Web config for your Firebase project lives in src/firebase-config.json (see CLOUD.md).
+let firebaseConfig = null;
+try {
+  firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-config.json'), 'utf8'));
+  if (!firebaseConfig.apiKey) firebaseConfig = null;
+} catch { firebaseConfig = null; }
+if (process.env.CORKLY_EMULATOR) {
+  firebaseConfig = { apiKey: 'demo-key', authDomain: 'demo-corkly.firebaseapp.com', projectId: 'demo-corkly', storageBucket: 'demo-corkly.appspot.com', appId: 'demo', emulator: { host: '127.0.0.1' } };
+}
+
+// corkly://join/CODE links
+let pendingJoin = null;
+const joinFrom = (s) => {
+  const m = /corkly:\/\/join\/([A-Za-z0-9-]+)/i.exec(String(s || ''));
+  return m ? m[1] : null;
+};
+function deliverJoin(code) {
+  if (!code) return;
+  pendingJoin = code;
+  if (!app.isReady()) return; // picked up by the window once it loads
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    win.webContents.send('cloud:join', code);
+    pendingJoin = null;
+  }
+  showWin();
+}
+app.on('open-url', (e, url) => { e.preventDefault(); deliverJoin(joinFrom(url)); });
+
 const openTip = () => { if (/^https:\/\//i.test(config.tipUrl)) shell.openExternal(config.tipUrl); };
 
 // ---------- paths ----------
@@ -368,6 +397,7 @@ ipcMain.handle('app:info', () => ({
   imagesBase: pathToFileURL(imagesDir()).href + '/',
   version: app.getVersion(),
   firstLaunch,
+  firebase: firebaseConfig,
   tip: { label: config.tipButtonLabel, nudge: config.nudge, enabled: /^https:\/\//i.test(config.tipUrl) },
   mode: currentMode,
 }));
@@ -396,6 +426,16 @@ ipcMain.handle('image:buffer', (_e, buf, ext) => {
   return imageInfo(file);
 });
 ipcMain.handle('tip:open', () => openTip());
+ipcMain.handle('image:read', (_e, file) => {
+  if (!/^[\w-]+\.[a-z0-9]+$/i.test(String(file))) return null;
+  try {
+    const p = path.join(imagesDir(), file);
+    const ext = path.extname(p).slice(1).toLowerCase().replace('jpg', 'jpeg');
+    return { bytes: fs.readFileSync(p), type: 'image/' + ext };
+  } catch { return null; }
+});
+ipcMain.handle('window:show', () => showWin());
+ipcMain.handle('cloud:pending-join', () => { const c = pendingJoin; pendingJoin = null; return c; });
 ipcMain.handle('update:check', async () => {
   if (!updater) return { state: 'dev', version: app.getVersion() };
   sendUpdate({ state: 'checking' });
@@ -444,7 +484,16 @@ ipcMain.handle('window:hide', () => { if (tray) win?.hide(); else win?.minimize(
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', showWin);
+  app.on('second-instance', (_e, argv) => {
+    const code = joinFrom((argv || []).join(' '));
+    if (code) deliverJoin(code); else showWin();
+  });
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) app.setAsDefaultProtocolClient('corkly', process.execPath, [path.resolve(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient('corkly');
+  }
+  pendingJoin = joinFrom(process.argv.join(' '));
 
   app.whenReady().then(() => {
     loadSettings();

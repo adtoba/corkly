@@ -705,3 +705,96 @@ body.exporting .tip-nudge { display: none; }
 .update-note .tip-tape { background: repeating-linear-gradient(90deg, rgba(255, 210, 90, .85) 0 6px, rgba(255, 228, 150, .85) 6px 12px); }
 .view-widget .update-note { left: 12px; bottom: 76px; width: 250px; }
 body.exporting .update-note { display: none; }
+
+/* ===================== Shared boards ===================== */
+.view-widget #shareBtn { display: none; }
+#boardBtn { position: relative; }
+#boardBtn.is-shared .chip-dot { background: radial-gradient(circle at 35% 30%, #fff8 0 1.5px, transparent 2px), radial-gradient(circle at 40% 36%, #06d6a0 0 50%, #0b7a5b 100%); }
+#boardBtn.has-new::after {
+  content: attr(data-count); position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: #e63946; color: #fff; font-size: 12px; line-height: 18px; text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .35); animation: popIn .35s cubic-bezier(.34, 1.8, .64, 1);
+}
+
+.item .by {
+  position: absolute; right: 8px; bottom: -22px; z-index: 2;
+  font-family: var(--hand); font-size: 17px; color: rgba(255, 255, 255, .92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .55); white-space: nowrap; pointer-events: none;
+  transform: rotate(-2deg);
+}
+.bg-grid .item .by { color: #3a4a6b; text-shadow: none; }
+.new-sticker {
+  position: absolute; top: 10px; right: -12px; z-index: 4;
+  font-family: var(--marker); font-size: 15px; color: #fff; letter-spacing: 1px;
+  background: #e63946; padding: 3px 9px; border-radius: 4px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, .3); transform: rotate(12deg);
+  animation: stickerIn .5s cubic-bezier(.34, 1.8, .64, 1), wiggleSticker 2.4s ease-in-out .6s infinite;
+  pointer-events: none;
+}
+@keyframes stickerIn { from { transform: rotate(40deg) scale(0); } }
+@keyframes wiggleSticker { 0%, 100% { transform: rotate(12deg); } 50% { transform: rotate(4deg) scale(1.06); } }
+.item.locked { cursor: default; }
+.item.locked .resize { display: none; }
+.item.locked [contenteditable] { cursor: default; }
+
+/* panels reuse the settings card look */
+.panel { width: min(440px, 100%); }
+.panel h3 { margin-top: 16px; }
+.panel-text { font-family: var(--ui); font-size: 17px; line-height: 1.35; margin: 4px 0 10px; }
+.panel-note { font-family: var(--hand); font-size: 18px; color: #7a6c52; line-height: 1.2; margin: 6px 0; }
+.panel-note code { font-family: var(--type); font-size: 13px; background: #f1e6cc; padding: 0 4px; border-radius: 3px; }
+.panel-list { margin: 0 0 10px; padding-left: 20px; font-size: 16px; line-height: 1.4; }
+.pill-btn {
+  border: none; border-radius: 999px; background: var(--ink); color: #fff3dc; font-size: 16px;
+  padding: 8px 18px; box-shadow: 0 3px 0 #000; transition: transform .15s;
+}
+.pill-btn:hover { background: #2b4a8a; }
+.pill-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+.pill-btn:disabled { opacity: .5; pointer-events: none; }
+.pill-btn.small { font-size: 14px; padding: 6px 14px; }
+.pill-btn.ghost { background: #efe4ca; color: var(--ink); box-shadow: 0 3px 0 #c9b88f; }
+.pill-btn.ghost:hover { background: #e6d6b0; }
+.seg.small button { padding: 7px 8px; font-size: 15px; }
+.auth-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.auth-form label { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: #5a4a35; }
+.auth-form input {
+  font: inherit; font-size: 17px; color: var(--ink); padding: 8px 12px;
+  border: 2px solid #3a3a3a; border-radius: 8px 6px 9px 5px; background: #fff;
+  user-select: text; -webkit-user-select: text; outline: none;
+}
+.auth-form input:focus { border-color: #2b4a8a; box-shadow: 0 0 0 3px rgba(43, 74, 138, .2); }
+.auth-form .pill-btn { align-self: flex-start; margin-top: 4px; }
+.code-input { font-family: var(--type) !important; letter-spacing: 3px; text-transform: uppercase; }
+.form-error { margin: 0; font-family: var(--hand); font-size: 19px; color: #c1121f; }
+.who { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; }
+.who b { display: block; font-size: 19px; font-weight: 400; }
+.who small { display: block; color: #7a6c52; }
+.avatar {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: #ffe97a; border: 2px solid var(--ink); font-family: var(--marker); font-size: 16px; color: var(--ink);
+}
+.who .avatar { width: 46px; height: 46px; font-size: 22px; }
+.member { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-family: var(--ui); font-size: 16px; color: var(--ink); }
+.member .avatar { width: 28px; height: 28px; font-size: 13px; }
+.member .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member small { color: #7a6c52; font-size: 13px; }
+.chip-role { font-size: 13px; background: #efe4ca; border-radius: 999px; padding: 2px 9px; color: #5a4a35; white-space: nowrap; }
+.link-btn.danger { color: #c1121f; }
+.invite-out { margin: 12px 0 4px; padding: 12px 14px; background: #fff3a8; border-radius: 4px; transform: rotate(-1deg); box-shadow: 0 6px 12px -6px rgba(0, 0, 0, .35); }
+.invite-out .code { font-family: var(--type); font-size: 30px; letter-spacing: 4px; text-align: center; color: var(--ink); user-select: text; -webkit-user-select: text; }
+.invite-out .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.code-sm { font-family: var(--type); letter-spacing: 2px; font-size: 14px; }
+.danger-zone { margin-top: 16px; padding-top: 10px; border-top: 2px dashed rgba(0, 0, 0, .1); }
+.account-row .pill-btn { flex: none; }
+
+/* a shared photo that's still downloading looks like a developing polaroid */
+.developing {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: linear-gradient(120deg, #3b3226, #6b5a44, #3b3226);
+  background-size: 300% 100%;
+  animation: develop 2.2s ease-in-out infinite;
+}
+.developing span { font-family: var(--hand); font-size: 22px; color: rgba(255, 243, 220, .75); }
+@keyframes develop { 0% { background-position: 0% 0; } 50% { background-position: 100% 0; } 100% { background-position: 0% 0; } }
+/* while tying yarn, clicks go to the pins even where an existing string crosses them */
+body.mode-yarn #strings .y-hit { pointer-events: none; }

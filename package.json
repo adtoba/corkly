@@ -11,7 +11,10 @@
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "release": "electron-builder --publish always"
+    "release": "electron-builder --publish always",
+    "build:cloud": "esbuild src/cloud/index.js --bundle --format=iife --global-name=CorklyCloud --platform=browser --target=chrome130 --minify --legal-comments=none --outfile=src/renderer/cloud.js",
+    "postinstall": "npm run build:cloud",
+    "prestart": "npm run build:cloud"
   },
   "dependencies": {
     "@fontsource/caveat": "^5.3.0",
@@ -22,7 +25,9 @@
   },
   "devDependencies": {
     "electron": "^45.1.0",
-    "electron-builder": "^26.0.0"
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.2",
+    "firebase": "^13.1.0"
   },
   "build": {
     "appId": "com.adetoba.corkly",
