@@ -23,6 +23,7 @@
     async hideWindow() {},
     async openTip() { window.open('https://ko-fi.com/', '_blank'); },
     readImage: null,
+    track() {},
     async showWindow() { window.focus(); },
     async pendingJoin() { return null; },
     onJoinLink() {},
@@ -1290,6 +1291,7 @@
       { label: '+ New board', action: () => {
         const b = newBoard('Board ' + (store.boards.length + 1));
         b.bg = pick(['cork', 'cork', 'felt', 'chalk', 'grid']);
+        api.track('board_created', { boards: store.boards.length + 1 });
         store.boards.push(b);
         switchBoard(b.id);
         setTimeout(renameBoard, 50);
@@ -1414,6 +1416,7 @@
       ? 'Saved now — it kicks in once Corkly is installed (not while running from npm start).'
       : 'Your board will be waiting for you every time you log in.';
     $('#webNote').hidden = !isWebPreview;
+    $('#statsOpt').hidden = !settings.analyticsAvailable;
     paintAccount();
     document.querySelectorAll('.bg-picker button').forEach((x) => x.classList.toggle('active', x.dataset.bg === board.bg));
   }
@@ -1447,6 +1450,7 @@
     if (m === VIEW_MODE) return;
     Sound.play('whoosh');
     await flushSave();
+    api.track('mode_switched', { to: m });
     api.setMode(m);
   }
   $('#modeBtn').onclick = () => switchViewMode(VIEW_MODE === 'widget' ? 'window' : 'widget');
@@ -1494,6 +1498,7 @@
   }
   function openTip() {
     api.openTip();
+    api.track('tip_clicked', {});
     const m = store.meta;
     m.tippedAt = Date.now();
     scheduleSave();
@@ -2085,6 +2090,7 @@
       scheduleSave();
       updateUnseenBadge();
       Sound.play('tada');
+      api.track('board_shared', { items: b.items.length });
       openShare();
     } catch (e) {
       status.textContent = Cloud.friendlyError(e);
@@ -2158,7 +2164,7 @@
       };
       p.body.querySelector('#makeInvite').onclick = async (e) => {
         e.target.disabled = true;
-        try { const code = await Cloud.createInvite(b.cloud.id, b.name, role); showCode(code, role); Sound.play('pin'); } catch (ex) { toast(Cloud.friendlyError(ex)); }
+        try { const code = await Cloud.createInvite(b.cloud.id, b.name, role); showCode(code, role); Sound.play('pin'); api.track('invite_created', { role }); } catch (ex) { toast(Cloud.friendlyError(ex)); }
         e.target.disabled = false;
       };
       unsubs.push(Cloud.watchInvites(b.cloud.id, (list) => {
@@ -2215,6 +2221,7 @@
         switchBoard(b.id);
         startWatching(b);
         Sound.play('tada');
+        api.track('board_joined', { role: j.role });
         toast(`You joined “${j.name}”${j.ownerName ? ` by ${j.ownerName}` : ''}!`);
       } catch (ex) {
         err.hidden = false;

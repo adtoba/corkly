@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('corkly', {
   setMode: (mode) => ipcRenderer.invoke('window:mode', mode),
   hideWindow: () => ipcRenderer.invoke('window:hide'),
   openTip: () => ipcRenderer.invoke('tip:open'),
+  track: (name, props) => ipcRenderer.send('analytics:track', name, props),
   readImage: (file) => ipcRenderer.invoke('image:read', file),
   showWindow: () => ipcRenderer.invoke('window:show'),
   pendingJoin: () => ipcRenderer.invoke('cloud:pending-join'),

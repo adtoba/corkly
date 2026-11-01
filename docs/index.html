@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Corkly — a playful pinboard for your desktop</title>
+  <meta name="description" content="Pin sticky notes, photos, checklists and links on a cork board that lives on your desktop. Tie ideas together with yarn and share boards with friends. Free for Mac and Windows." />
+  <meta property="og:title" content="Corkly — a playful pinboard for your desktop" />
+  <meta property="og:description" content="Sticky notes, polaroids, checklists and yarn, right on your desktop. Free for Mac & Windows." />
+  <meta property="og:image" content="https://adtoba.github.io/corkly/app.jpg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Patrick+Hand&family=Permanent+Marker&family=Special+Elite&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #2f2418; --cream: #fff3dc; --wood: #6e4527; --wood-dark: #4a2c17;
+      --hand: 'Caveat', cursive; --ui: 'Patrick Hand', system-ui, sans-serif;
+      --marker: 'Permanent Marker', cursive; --type: 'Special Elite', monospace;
+      --cork: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .17 0 0 0 0 .05 0 0 0 2.2 -.7'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; font-family: var(--ui); font-size: 18px; color: var(--ink);
+      background: var(--cork) 0 0 / 220px, radial-gradient(ellipse at 50% 0%, #d2a26a, #b9844d 60%, #a5703f);
+      background-color: #c4935b; min-height: 100vh; overflow-x: hidden;
+    }
+    a { color: inherit; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+    /* top bar: a strip of wood */
+    header {
+      background: linear-gradient(180deg, #8a5a34, #5b3a22); color: var(--cream);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .35); position: sticky; top: 0; z-index: 10;
+    }
+    header .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .logo img { width: 34px; height: 34px; }
+    .logo span { font-family: var(--marker); font-size: 26px; color: #ffe6b0; transform: rotate(-3deg); text-shadow: 0 2px 0 var(--wood-dark); }
+    header nav { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+    header nav a { text-decoration: none; opacity: .9; }
+    header nav a:hover { opacity: 1; text-decoration: underline; }
+    .mini-dl { background: #ffdd00; color: var(--ink) !important; padding: 6px 14px; border-radius: 999px; box-shadow: 0 3px 0 #2f2418; opacity: 1 !important; }
+
+    /* hero */
+    .hero { display: grid; grid-template-columns: 1fr 1.25fr; gap: 40px; align-items: center; padding: 60px 0 40px; }
+    .hero h1 { font-family: var(--marker); font-weight: 400; font-size: clamp(40px, 6vw, 66px); line-height: 1.02; margin: 0 0 14px; color: #fff8ea; text-shadow: 0 3px 0 rgba(74, 44, 23, .55), 0 8px 18px rgba(0, 0, 0, .25); transform: rotate(-2deg); }
+    .hero p.lead { font-size: 22px; line-height: 1.4; margin: 0 0 26px; color: #2b1d10; max-width: 30ch; }
+    .note-lead { background: #ffe97a; padding: 16px 20px 18px; transform: rotate(1.5deg); box-shadow: 0 1px 1px rgba(0,0,0,.18), 0 10px 18px -8px rgba(0,0,0,.45); position: relative; max-width: 440px; border-bottom-right-radius: 60px 8px; }
+    .note-lead p { margin: 0; font-family: var(--hand); font-size: 26px; line-height: 1.15; }
+
+    .downloads { display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 10px; }
+    .dl {
+      position: relative; display: flex; align-items: center; gap: 12px; text-decoration: none;
+      background: linear-gradient(160deg, #f0d9a8, #e2c287); padding: 14px 26px 14px 20px; min-width: 230px;
+      -webkit-mask: radial-gradient(circle 10px at 0 50%, #0000 96%, #000) left / 51% 100% no-repeat, radial-gradient(circle 10px at 100% 50%, #0000 96%, #000) right / 51% 100% no-repeat;
+      mask: radial-gradient(circle 10px at 0 50%, #0000 96%, #000) left / 51% 100% no-repeat, radial-gradient(circle 10px at 100% 50%, #0000 96%, #000) right / 51% 100% no-repeat;
+      filter: drop-shadow(0 6px 6px rgba(0, 0, 0, .3)); transition: transform .25s cubic-bezier(.34, 1.8, .64, 1);
+    }
+    .dl:nth-child(1) { transform: rotate(-2deg); }
+    .dl:nth-child(2) { transform: rotate(1.5deg); }
+    .dl:hover { transform: rotate(0) translateY(-4px) scale(1.04); }
+    .dl.primary { background: linear-gradient(160deg, #2f2418, #4a3624); color: #fff3dc; }
+    .dl svg { width: 30px; height: 30px; flex: none; }
+    .dl b { display: block; font-family: var(--type); font-weight: 400; font-size: 19px; letter-spacing: .5px; }
+    .dl small { display: block; font-size: 14px; opacity: .75; }
+    .meta { font-family: var(--hand); font-size: 21px; color: #3b2814; }
+    .meta a { color: #2b4a8a; }
+
+    .shot { position: relative; background: #fdfdfb; padding: 14px 14px 14px; margin: 0; transform: rotate(1.8deg); box-shadow: 0 2px 3px rgba(0,0,0,.2), 0 30px 50px -18px rgba(0,0,0,.55); }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot figcaption { text-align: center; font-family: var(--hand); font-size: 26px; line-height: 1.1; padding-top: 12px; }
+    .tape { position: absolute; top: -16px; left: 50%; width: 130px; height: 32px; margin-left: -65px; transform: rotate(-4deg); background: repeating-linear-gradient(45deg, rgba(255,160,185,.85) 0 8px, rgba(255,200,215,.85) 8px 16px); clip-path: polygon(0 0, 4% 25%, 0 50%, 4% 75%, 0 100%, 100% 100%, 96% 75%, 100% 50%, 96% 25%, 100% 0); }
+    .tape.sun { background: repeating-linear-gradient(90deg, rgba(255,210,90,.85) 0 6px, rgba(255,228,150,.85) 6px 12px); }
+    .tape.mint { background: radial-gradient(circle, rgba(255,255,255,.7) 2px, transparent 2.5px) 0 0/10px 10px, rgba(140,220,190,.85); }
+
+    /* features as sticky notes */
+    section h2 { font-family: var(--marker); font-weight: 400; font-size: 40px; color: #fff8ea; text-shadow: 0 3px 0 rgba(74,44,23,.55); margin: 70px 0 26px; transform: rotate(-1.5deg); }
+    .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px 28px; }
+    .sticky { position: relative; padding: 34px 22px 26px; min-height: 210px; box-shadow: 0 1px 1px rgba(0,0,0,.18), 0 10px 16px -8px rgba(0,0,0,.45); border-bottom-right-radius: 60px 8px; transition: transform .35s cubic-bezier(.34, 1.8, .64, 1); }
+    .sticky:hover { transform: rotate(0) scale(1.03) !important; }
+    .sticky h3 { font-family: var(--marker); font-weight: 400; font-size: 23px; margin: 0 0 8px; }
+    .sticky p { font-family: var(--hand); font-size: 24px; line-height: 1.12; margin: 0; }
+    .pin { position: absolute; top: -8px; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; background: radial-gradient(circle at 34% 30%, rgba(255,255,255,.85) 0 2.5px, transparent 3.5px), radial-gradient(circle at 40% 36%, var(--p, #e63946) 0 48%, #3a0f12 130%); box-shadow: 3px 5px 4px rgba(0,0,0,.35); }
+    .y { background: #ffe97a; } .k { background: #ffb3c7; } .m { background: #b8f0c8; } .b { background: #a9d8ff; } .o { background: #ffc078; } .l { background: #d9c4ff; }
+    .notes .sticky:nth-child(3n+1) { transform: rotate(-2.5deg); }
+    .notes .sticky:nth-child(3n+2) { transform: rotate(1.5deg); }
+    .notes .sticky:nth-child(3n) { transform: rotate(-1deg); }
+
+    .split { display: grid; grid-template-columns: .8fr 1.2fr; gap: 40px; align-items: center; }
+    .card { background: #fffdf6; position: relative; padding: 24px 26px 26px 52px; box-shadow: 0 1px 1px rgba(0,0,0,.18), 0 12px 20px -10px rgba(0,0,0,.45); transform: rotate(-1deg); background-image: repeating-linear-gradient(180deg, transparent 0 31px, rgba(120,170,225,.45) 31px 32px); background-position: 0 58px; }
+    .card::before { content: ''; position: absolute; left: 34px; top: 0; bottom: 0; width: 2px; background: rgba(232,106,106,.55); }
+    .card h3 { font-family: var(--type); font-weight: 400; font-size: 24px; margin: 0 0 12px; }
+    .card p, .card li { font-family: var(--hand); font-size: 24px; line-height: 32px; margin: 0; }
+    .card ul { padding-left: 20px; margin: 6px 0 0; }
+    .widget-shot { justify-self: center; max-width: 360px; transform: rotate(-2deg); }
+
+    /* install help */
+    details { background: #fffef8; margin: 0 0 16px; padding: 14px 20px; box-shadow: 0 1px 1px rgba(0,0,0,.18), 0 8px 14px -8px rgba(0,0,0,.4); }
+    details:nth-of-type(odd) { transform: rotate(-.6deg); }
+    details:nth-of-type(even) { transform: rotate(.5deg); }
+    summary { cursor: pointer; font-family: var(--type); font-size: 19px; list-style: none; }
+    summary::before { content: '📌 '; }
+    details p, details li { font-size: 18px; line-height: 1.5; }
+    code { font-family: var(--type); font-size: 15px; background: #f1e6cc; padding: 1px 6px; border-radius: 3px; }
+
+    footer { margin-top: 70px; background: linear-gradient(180deg, #6e4527, #4a2c17); color: var(--cream); padding: 34px 0 40px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 30px; align-items: center; justify-content: space-between; }
+    footer a { color: #ffe6b0; }
+    .coffee { display: inline-flex; align-items: center; gap: 8px; background: #ffdd00; color: var(--ink) !important; text-decoration: none; padding: 9px 18px; border-radius: 999px; box-shadow: 0 3px 0 #000; font-size: 17px; transform: rotate(-2deg); }
+    .privacy { font-size: 15px; opacity: .8; max-width: 60ch; }
+
+    @media (max-width: 860px) {
+      .hero, .split { grid-template-columns: 1fr; }
+      .notes { grid-template-columns: 1fr 1fr; }
+      header nav a:not(.mini-dl) { display: none; }
+    }
+    @media (max-width: 560px) {
+      .notes { grid-template-columns: 1fr; }
+      .dl { min-width: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="#"><img src="icon.png" alt="" /><span>Corkly</span></a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#install">Install help</a>
+        <a class="mini-dl" href="#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero" id="download">
+      <div>
+        <h1>Your desk,<br />but pinned.</h1>
+        <div class="note-lead"><span class="pin" style="--p:#2a9d8f"></span>
+          <p>A playful cork board that lives on your desktop. Sticky notes, polaroids, checklists, links — tied together with red yarn.</p>
+        </div>
+        <div class="downloads">
+          <a class="dl" id="dlMac" data-platform="mac" href="https://github.com/adtoba/corkly/releases/latest">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.2 1-4 2.5-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.5-1-2.5-4zM14 5.4c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z"/></svg>
+            <span><b>Download for Mac</b><small>Apple Silicon &amp; Intel</small></span>
+          </a>
+          <a class="dl" id="dlWin" data-platform="windows" href="https://github.com/adtoba/corkly/releases/latest">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.4 4.5v7H3zM11.4 4.4 21 3v8.5h-9.6zM3 12.5h7.4v7L3 18.5zM11.4 12.5H21V21l-9.6-1.4z"/></svg>
+            <span><b>Download for Windows</b><small>Windows 10 &amp; 11</small></span>
+          </a>
+        </div>
+        <div class="meta" id="meta">Free · Mac &amp; Windows · <a href="https://github.com/adtoba/corkly/releases">all versions</a></div>
+      </div>
+      <figure class="shot">
+        <span class="tape"></span>
+        <img src="app.jpg" width="1600" height="1000" alt="Corkly with sticky notes, an index card, a checklist and a polaroid on a cork board, tied together with red yarn" />
+        <figcaption>everything you need, pinned where you can see it</figcaption>
+      </figure>
+    </section>
+
+    <section id="features">
+      <h2>Things you can pin</h2>
+      <div class="notes">
+        <div class="sticky y"><span class="pin"></span><h3>Sticky notes</h3><p>Six colours, handwriting font, double-click anywhere to add one.</p></div>
+        <div class="sticky b"><span class="pin" style="--p:#3a86ff"></span><h3>Polaroids</h3><p>Drop or paste a photo and it becomes a polaroid with a caption and washi tape.</p></div>
+        <div class="sticky m"><span class="pin" style="--p:#06d6a0"></span><h3>Checklists</h3><p>Tick everything off and get a DONE! stamp and a burst of confetti.</p></div>
+        <div class="sticky k"><span class="pin" style="--p:#9b5de5"></span><h3>Red yarn</h3><p>Connect ideas detective-board style. The string sags and bounces when you move things.</p></div>
+        <div class="sticky o"><span class="pin" style="--p:#ffd166"></span><h3>Shared boards</h3><p>Invite a friend with a code and they can pin notes and photos straight onto your board.</p></div>
+        <div class="sticky l"><span class="pin" style="--p:#e63946"></span><h3>Link tickets</h3><p>Paste a link and it turns into a little admission ticket. Click to open.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Lives on your desktop</h2>
+      <div class="split">
+        <figure class="shot widget-shot"><span class="tape sun"></span><img src="widget.jpg" width="660" height="840" alt="Corkly as a small desktop widget" /><figcaption>widget mode</figcaption></figure>
+        <div class="card">
+          <h3>Small, always there</h3>
+          <ul>
+            <li>Shrinks into a widget in the corner of your screen</li>
+            <li>Opens by itself when your computer starts</li>
+            <li>Hide the toolbars — just the board, nothing else</li>
+            <li>Show or hide it from anywhere with one shortcut</li>
+            <li>Your boards stay on your computer unless you share them</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>Install help</h2>
+      <details>
+        <summary>On a Mac</summary>
+        <ol>
+          <li>Open the <code>.dmg</code> and drag <b>Corkly</b> into <b>Applications</b>.</li>
+          <li>Open Corkly. If macOS says it can't check the developer, go to <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. You only do this once.</li>
+          <li>If it says Corkly "is damaged", open Terminal and run <code>xattr -cr /Applications/Corkly.app</code>, then open it again.</li>
+        </ol>
+      </details>
+      <details>
+        <summary>On Windows</summary>
+        <ol>
+          <li>Run <code>Corkly-Setup.exe</code>.</li>
+          <li>If Windows shows <b>"Windows protected your PC"</b>, click <b>More info → Run anyway</b>.</li>
+          <li>Corkly updates itself after that.</li>
+        </ol>
+      </details>
+      <details>
+        <summary>Is it really free?</summary>
+        <p>Yes. If Corkly makes your desk happier, you can <a href="https://ko-fi.com/adetoba">buy me a coffee</a> — that's what keeps the pins coming.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div>
+        <div>Made in Lagos by <a href="https://adetoba.com">Adebisi Habib Adetoba</a> · <a href="https://github.com/adtoba/corkly">GitHub</a></div>
+        <p class="privacy">Privacy: your boards live on your computer. Shared boards are stored so your friends can see them. Corkly sends anonymous counts like "opened today" (no names, no board contents) — you can switch that off in Settings.</p>
+      </div>
+      <a class="coffee" href="https://ko-fi.com/adetoba">☕ Buy me a coffee</a>
+    </div>
+  </footer>
+
+  <script>
+    // ---- settings ----
+    const REPO = 'adtoba/corkly';
+    const APTABASE_KEY = 'A-EU-7074169884'; // paste your Aptabase App Key (A-EU-… or A-US-…) to count visits and download clicks
+
+    // ---- tiny, cookie-free analytics (Aptabase) ----
+    const session = String(Math.floor(Date.now() / 1000)) + String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+    function track(eventName, props) {
+      const m = /^A-(EU|US)-/.exec(APTABASE_KEY);
+      if (!m) return;
+      try {
+        fetch(`https://${m[1].toLowerCase()}.aptabase.com/api/v0/event`, {
+          method: 'POST', keepalive: true, credentials: 'omit',
+          headers: { 'Content-Type': 'application/json', 'App-Key': APTABASE_KEY },
+          body: JSON.stringify({
+            timestamp: new Date().toISOString(), sessionId: session, eventName,
+            systemProps: { locale: navigator.language, isDebug: location.hostname === 'localhost', appVersion: 'site', sdkVersion: 'corkly-site@1' },
+            props: props || {},
+          }),
+        }).catch(() => {});
+      } catch {}
+    }
+    const ref = (() => { try { return document.referrer ? new URL(document.referrer).hostname : 'direct'; } catch { return 'direct'; } })();
+    const utm = new URLSearchParams(location.search).get('utm_source') || '';
+    track('site_view', { ref, utm });
+
+    // ---- point the buttons at the latest installers ----
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent);
+    const isWin = /Win/.test(navigator.platform);
+    const mac = document.getElementById('dlMac');
+    const win = document.getElementById('dlWin');
+    if (isWin) { win.classList.add('primary'); win.parentNode.prepend(win); } else mac.classList.add('primary');
+
+    fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => {
+        if (!rel) return;
+        const find = (re) => (rel.assets || []).find((a) => re.test(a.name));
+        const dmg = find(/\.dmg$/i), exe = find(/Setup.*\.exe$/i) || find(/\.exe$/i);
+        const mb = (a) => `${Math.round(a.size / 1048576)} MB`;
+        if (dmg) { mac.href = dmg.browser_download_url; mac.querySelector('small').textContent = `Apple Silicon & Intel · ${mb(dmg)}`; }
+        if (exe) { win.href = exe.browser_download_url; win.querySelector('small').textContent = `Windows 10 & 11 · ${mb(exe)}`; }
+        const date = new Date(rel.published_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+        document.getElementById('meta').innerHTML = `Free · version ${rel.tag_name.replace(/^v/, '')} · ${date} · <a href="${rel.html_url}">what's new</a>`;
+      })
+      .catch(() => {});
+
+    document.querySelectorAll('.dl').forEach((a) => a.addEventListener('click', () => {
+      track('download_click', { platform: a.dataset.platform, ref, utm });
+    }));
+  </script>
+</body>
+</html>

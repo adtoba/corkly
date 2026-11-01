@@ -70,6 +70,41 @@ function deliverJoin(code) {
 }
 app.on('open-url', (e, url) => { e.preventDefault(); deliverJoin(joinFrom(url)); });
 
+// ---------- anonymous usage stats (Aptabase) ----------
+// Only counts like "opened today" — never anything on your boards. Key lives in config.json; empty = off.
+let aptabase = null;
+if (/^A-(EU|US|SH)-/.test(config.aptabaseKey || '')) {
+  try {
+    aptabase = require('@aptabase/electron/main');
+    aptabase.initialize(config.aptabaseKey, config.aptabaseHost ? { host: config.aptabaseHost } : undefined);
+  } catch (e) { aptabase = null; }
+}
+const TRACKABLE = new Set(['board_shared', 'board_joined', 'invite_created', 'tip_clicked', 'mode_switched', 'board_created']);
+function track(name, props) {
+  if (!aptabase || settings.analytics === false) return;
+  try { aptabase.trackEvent(name, props).catch(() => {}); } catch {}
+}
+const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
+function weekKey(d = new Date()) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return `${t.getUTCFullYear()}-W${String(Math.ceil(((t - y) / 864e5 + 1) / 7)).padStart(2, '0')}`;
+}
+// One event per install per day/week/month, so the counts in Aptabase *are* your active users.
+function pingActive() {
+  const props = { mode: currentMode };
+  const marks = settings.activeMarks || {};
+  const now = new Date();
+  const checks = [['daily_active', dayKey(now)], ['weekly_active', weekKey(now)], ['monthly_active', dayKey(now).slice(0, 7)]];
+  let changed = false;
+  for (const [ev, key] of checks) {
+    if (marks[ev] !== key) { marks[ev] = key; changed = true; track(ev, props); }
+  }
+  if (changed) { settings.activeMarks = marks; saveSettings(); }
+}
+
 const openTip = () => { if (/^https:\/\//i.test(config.tipUrl)) shell.openExternal(config.tipUrl); };
 
 // ---------- paths ----------
@@ -94,6 +129,7 @@ const DEFAULT_SETTINGS = {
   loginAsWidget: true,      // ...and open it as a desktop widget
   mode: 'widget',           // last used mode: 'window' | 'widget' — first launch starts small
   widgetOnTop: false,       // keep the widget floating above other windows
+  analytics: true,          // anonymous usage counts (Settings → Send anonymous usage stats)
   widgetBounds: null,
   windowBounds: null,
   closeToTray: true,        // closing hides Corkly to the tray / menu bar instead of quitting
@@ -352,6 +388,8 @@ function publicSettings() {
     widgetOnTop: settings.widgetOnTop,
     closeToTray: settings.closeToTray,
     shortcut: settings.shortcut,
+    analytics: settings.analytics !== false,
+    analyticsAvailable: !!aptabase,
     shortcutLabel: isMac ? '⌘ ⇧ Space' : 'Ctrl + Shift + Space',
     platform: process.platform,
     packaged: app.isPackaged,
@@ -360,7 +398,7 @@ function publicSettings() {
 
 function setSettings(patch) {
   const prev = { ...settings };
-  for (const k of ['openAtLogin', 'loginAsWidget', 'widgetOnTop', 'closeToTray', 'shortcut']) {
+  for (const k of ['openAtLogin', 'loginAsWidget', 'widgetOnTop', 'closeToTray', 'shortcut', 'analytics']) {
     if (k in patch) settings[k] = !!patch[k];
   }
   saveSettings();
@@ -426,6 +464,12 @@ ipcMain.handle('image:buffer', (_e, buf, ext) => {
   return imageInfo(file);
 });
 ipcMain.handle('tip:open', () => openTip());
+ipcMain.on('analytics:track', (_e, name, props) => {
+  if (!TRACKABLE.has(name)) return;
+  const clean = {};
+  for (const [k, v] of Object.entries(props || {})) if (typeof v === 'number' || (typeof v === 'string' && v.length < 40)) clean[k] = v;
+  track(name, clean);
+});
 ipcMain.handle('image:read', (_e, file) => {
   if (!/^[\w-]+\.[a-z0-9]+$/i.test(String(file))) return null;
   try {
@@ -514,6 +558,10 @@ if (!app.requestSingleInstanceLock()) {
     createWindow(mode);
     refreshTray();
     setupUpdates();
+    if (firstLaunch) track('install', { mode });
+    track('app_started', { mode, atLogin: atLogin ? 1 : 0 });
+    pingActive();
+    setInterval(pingActive, 60 * 60 * 1000); // Corkly often stays open for days
 
     app.on('activate', showWin);
   });

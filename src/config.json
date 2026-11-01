@@ -7,5 +7,6 @@
     "remindEveryDays": 30
   },
   "releasesUrl": "https://github.com/adtoba/corkly/releases/latest",
-  "macSigned": false
+  "macSigned": false,
+  "aptabaseKey": "A-EU-7074169884"
 }
